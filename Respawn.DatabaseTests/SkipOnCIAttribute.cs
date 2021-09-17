@@ -7,28 +7,28 @@
     using Xunit.Abstractions;
     using Xunit.Sdk;
 
-    public class SkipOnAppVeyorTestDiscoverer : IXunitTestCaseDiscoverer
+    public class SkipOnCITestDiscoverer : IXunitTestCaseDiscoverer
     {
         private readonly IMessageSink _diagnosticMessageSink;
 
-        public SkipOnAppVeyorTestDiscoverer(IMessageSink diagnosticMessageSink)
+        public SkipOnCITestDiscoverer(IMessageSink diagnosticMessageSink)
         {
             _diagnosticMessageSink = diagnosticMessageSink;
         }
 
         public IEnumerable<IXunitTestCase> Discover(ITestFrameworkDiscoveryOptions discoveryOptions, ITestMethod testMethod, IAttributeInfo factAttribute)
         {
-            if (Environment.GetEnvironmentVariable("Appveyor")?.ToUpperInvariant() == "TRUE")
+            if (Environment.GetEnvironmentVariable("CI")?.ToUpperInvariant() == "TRUE")
             {
                 return Enumerable.Empty<IXunitTestCase>();
             }
 
-            return new[] { new XunitTestCase(_diagnosticMessageSink, discoveryOptions.MethodDisplayOrDefault(), testMethod) };
+            return new[] { new XunitTestCase(_diagnosticMessageSink, discoveryOptions.MethodDisplayOrDefault(), TestMethodDisplayOptions.All, testMethod) };
         }
     }
 
-    [XunitTestCaseDiscoverer("Respawn.DatabaseTests.SkipOnAppVeyorTestDiscoverer", "Respawn.DatabaseTests")]
-    public class SkipOnAppVeyorAttribute : FactAttribute
+    [XunitTestCaseDiscoverer("Respawn.DatabaseTests.SkipOnCITestDiscoverer", "Respawn.DatabaseTests")]
+    public class SkipOnCIAttribute : FactAttribute
     {
     }
 }

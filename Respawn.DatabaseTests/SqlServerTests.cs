@@ -48,11 +48,7 @@ namespace Respawn.DatabaseTests
 
         public async Task InitializeAsync()
         {
-            var isAppVeyor = Environment.GetEnvironmentVariable("Appveyor")?.ToUpperInvariant() == "TRUE";
-            var connString =
-                isAppVeyor
-                    ? @"Server=(local)\SQL2016;Database=tempdb;User ID=sa;Password=Password12!"
-                    : @"Server=(LocalDb)\mssqllocaldb;Database=tempdb;Integrated Security=True";
+            var connString = @"Server=(LocalDb)\mssqllocaldb;Database=tempdb;Integrated Security=True";
 
             using (var connection = new SqlConnection(connString))
             {
@@ -65,10 +61,7 @@ namespace Respawn.DatabaseTests
                 }
             }
 
-            connString =
-                isAppVeyor
-                    ? @"Server=(local)\SQL2016;Database=SqlServerTests;User ID=sa;Password=Password12!"
-                    : @"Server=(LocalDb)\mssqllocaldb;Database=SqlServerTests;Integrated Security=True";
+            connString = @"Server=(LocalDb)\mssqllocaldb;Database=SqlServerTests;Integrated Security=True";
 
             _connection = new SqlConnection(connString);
             _connection.Open();
@@ -623,6 +616,107 @@ namespace Respawn.DatabaseTests
 
             _database.Execute("INSERT A.Foo VALUES (0)");
             _database.ExecuteScalar<int>("SELECT MAX(id) FROM A.Foo").ShouldBe(1001);
+        }
+
+        [Fact]
+        public async Task ShouldDeleteTemporalTablesData()
+        {
+            _database.Execute("drop table if exists FooHistory");
+            _database.Execute("IF OBJECT_ID(N'Foo', N'U') IS NOT NULL alter table Foo set (SYSTEM_VERSIONING = OFF)");
+            _database.Execute("drop table if exists Foo");
+
+            _database.Execute("create table Foo (Value [int] not null primary key clustered, " +
+                                                "ValidFrom datetime2 generated always as row start, " +
+                                                "ValidTo datetime2 generated always as row end," +
+                                                " period for system_time(ValidFrom, ValidTo)" +
+                                                ") with (system_versioning = on (history_table = dbo.FooHistory))");
+
+            _database.Execute("INSERT Foo (Value) VALUES (1)");
+            _database.Execute("UPDATE Foo SET Value = 2 Where Value = 1");
+
+            var checkpoint = new Checkpoint();
+            checkpoint.CheckTemporalTables = true;
+            await checkpoint.Reset(_connection);
+
+            _database.ExecuteScalar<int>("SELECT COUNT(1) FROM FooHistory").ShouldBe(0);
+        }
+
+        [Fact]
+        public async Task ShouldResetTemporalTableDefaultName()
+        {
+            _database.Execute("drop table if exists FooHistory");
+            _database.Execute("IF OBJECT_ID(N'Foo', N'U') IS NOT NULL alter table Foo set (SYSTEM_VERSIONING = OFF)");
+            _database.Execute("drop table if exists Foo");
+
+            _database.Execute("create table Foo (Value [int] not null primary key clustered, " +
+                                                "ValidFrom datetime2 generated always as row start, " +
+                                                "ValidTo datetime2 generated always as row end," +
+                                                " period for system_time(ValidFrom, ValidTo)" +
+                                                ") with (system_versioning = on (history_table = dbo.FooHistory))");
+
+            _database.Execute("INSERT Foo (Value) VALUES (1)");
+            _database.Execute("UPDATE Foo SET Value = 2 Where Value = 1");
+
+            var checkpoint = new Checkpoint();
+            checkpoint.CheckTemporalTables = true;
+            await checkpoint.Reset(_connection);
+
+            var sql = @"
+SELECT t1.name 
+FROM sys.tables t1 
+WHERE t1.object_id = (SELECT history_table_id FROM sys.tables t2 WHERE t2.name = 'Foo')
+";
+            _database.ExecuteScalar<string>(sql).ShouldBe("FooHistory");
+        }
+
+        [Fact]
+        public async Task ShouldResetTemporalTableAnonymousName()
+        {
+            // _database.Execute("drop table if exists FooHistory");
+            _database.Execute("IF OBJECT_ID(N'Foo', N'U') IS NOT NULL alter table Foo set (SYSTEM_VERSIONING = OFF)");
+            _database.Execute("drop table if exists Foo");
+
+            _database.Execute("create table Foo (Value [int] not null primary key clustered, " +
+                                                "ValidFrom datetime2 generated always as row start, " +
+                                                "ValidTo datetime2 generated always as row end," +
+                                                " period for system_time(ValidFrom, ValidTo)" +
+                                                ") with (system_versioning = on)");
+
+            _database.Execute("INSERT Foo (Value) VALUES (1)");
+            _database.Execute("UPDATE Foo SET Value = 2 Where Value = 1");
+
+            var checkpoint = new Checkpoint();
+            checkpoint.CheckTemporalTables = true;
+            await checkpoint.Reset(_connection);
+
+            var sql = @"
+SELECT t1.name 
+FROM sys.tables t1 
+WHERE t1.object_id = (SELECT history_table_id FROM sys.tables t2 WHERE t2.name = 'Foo')
+";
+            _database.ExecuteScalar<string>(sql).ShouldStartWith("MSSQL_TemporalHistoryFor_");
+        }
+
+        [Fact]
+        public async Task ShouldDeleteTemporalTablesDataFromNotDefaultSchemas()
+        {
+            _database.Execute("CREATE SCHEMA [TableSchema] AUTHORIZATION [dbo];");
+            _database.Execute("CREATE SCHEMA [HistorySchema] AUTHORIZATION [dbo];");
+
+            _database.Execute("create table TableSchema.Foo (Value [int] not null primary key clustered, " +
+                                                "ValidFrom datetime2 generated always as row start, " +
+                                                "ValidTo datetime2 generated always as row end," +
+                                                " period for system_time(ValidFrom, ValidTo)" +
+                                                ") with (system_versioning = on (history_table = HistorySchema.FooHistory))");
+
+            _database.Execute("INSERT TableSchema.Foo (Value) VALUES (1)");
+            _database.Execute("UPDATE TableSchema.Foo SET Value = 2 Where Value = 1");
+
+            var checkpoint = new Checkpoint();
+            checkpoint.CheckTemporalTables = true;
+            await checkpoint.Reset(_connection);
+
+            _database.ExecuteScalar<int>("SELECT COUNT(1) FROM HistorySchema.FooHistory").ShouldBe(0);
         }
     }
 }

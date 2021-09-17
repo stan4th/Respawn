@@ -22,10 +22,10 @@ namespace Respawn.DatabaseTests
         {
             var rootConnString = "Server=127.0.0.1;Port=8081;User ID=docker;Password=Password12!;database=postgres";
             var dbConnString = "Server=127.0.0.1;Port=8081;User ID=docker;Password=Password12!;database={0}";
-            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APPVEYOR")))
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI")))
             {
-                rootConnString = "Server=127.0.0.1;Port=5432;User ID=postgres;Password=Password12!;database=postgres";
-                dbConnString = "Server=127.0.0.1;Port=5432;User ID=postgres;Password=Password12!;database={0}";
+                rootConnString = "Server=127.0.0.1;Port=5432;User ID=postgres;Password=root;database=postgres";
+                dbConnString = "Server=127.0.0.1;Port=5432;User ID=postgres;Password=root;database={0}";
             }
             var dbName = DateTime.Now.ToString("yyyyMMddHHmmss") + Guid.NewGuid().ToString("N");
             using (var connection = new NpgsqlConnection(rootConnString))
@@ -52,7 +52,7 @@ namespace Respawn.DatabaseTests
             return Task.FromResult(0);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldDeleteData()
         {
             _database.Execute("create table \"foo\" (value int)");
@@ -66,15 +66,14 @@ namespace Respawn.DatabaseTests
 
             var checkpoint = new Checkpoint
             {
-                DbAdapter = DbAdapter.Postgres,
-                SchemasToInclude = new [] { "public" }
+                DbAdapter = DbAdapter.Postgres
             };
             await checkpoint.Reset(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM \"foo\"").ShouldBe(0);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldIgnoreTables()
         {
             _database.Execute("create table foo (Value int)");
@@ -89,7 +88,6 @@ namespace Respawn.DatabaseTests
             var checkpoint = new Checkpoint
             {
                 DbAdapter = DbAdapter.Postgres,
-                SchemasToInclude = new[] { "public" },
                 TablesToIgnore = new[] { "foo" }
             };
             await checkpoint.Reset(_connection);
@@ -98,7 +96,7 @@ namespace Respawn.DatabaseTests
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM bar").ShouldBe(0);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldIncludeTables()
         {
             _database.Execute("create table foo (Value int)");
@@ -113,7 +111,6 @@ namespace Respawn.DatabaseTests
             var checkpoint = new Checkpoint
             {
                 DbAdapter = DbAdapter.Postgres,
-                SchemasToInclude = new[] { "public" },
                 TablesToInclude = new[] { "foo" }
             };
             await checkpoint.Reset(_connection);
@@ -122,7 +119,7 @@ namespace Respawn.DatabaseTests
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM bar").ShouldBe(100);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldHandleRelationships()
         {
             _database.Execute("create table foo (value int, primary key (value))");
@@ -156,7 +153,7 @@ namespace Respawn.DatabaseTests
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM baz").ShouldBe(0);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldHandleCircularRelationships()
         {
             _database.Execute("create table parent (id int primary key, childid int NULL)");
@@ -178,8 +175,7 @@ namespace Respawn.DatabaseTests
 
             var checkpoint = new Checkpoint
             {
-                DbAdapter = DbAdapter.Postgres,
-                SchemasToInclude = new[] { "public" }
+                DbAdapter = DbAdapter.Postgres
             };
             try
             {
@@ -195,7 +191,7 @@ namespace Respawn.DatabaseTests
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM child").ShouldBe(0);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldHandleSelfRelationships()
         {
             _database.Execute("create table foo (id int primary key, parentid int NULL)");
@@ -211,8 +207,7 @@ namespace Respawn.DatabaseTests
 
             var checkpoint = new Checkpoint
             {
-                DbAdapter = DbAdapter.Postgres,
-                SchemasToInclude = new[] { "public" }
+                DbAdapter = DbAdapter.Postgres
             };
             try
             {
@@ -227,7 +222,7 @@ namespace Respawn.DatabaseTests
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM foo").ShouldBe(0);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldHandleComplexCycles()
         {
             _database.Execute("create table a (id int primary key, b_id int NULL)");
@@ -263,8 +258,7 @@ namespace Respawn.DatabaseTests
 
             var checkpoint = new Checkpoint
             {
-                DbAdapter = DbAdapter.Postgres,
-                SchemasToInclude = new[] { "public" }
+                DbAdapter = DbAdapter.Postgres
             };
             try
             {
@@ -285,7 +279,7 @@ namespace Respawn.DatabaseTests
         }
 
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldExcludeSchemas()
         {
             _database.Execute("create schema a");
@@ -302,7 +296,7 @@ namespace Respawn.DatabaseTests
             var checkpoint = new Checkpoint
             {
                 DbAdapter = DbAdapter.Postgres,
-                SchemasToExclude = new [] { "a", "pg_catalog" }
+                SchemasToExclude = new [] { "a" }
             };
             await checkpoint.Reset(_connection);
 
@@ -310,7 +304,7 @@ namespace Respawn.DatabaseTests
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM b.bar").ShouldBe(0);
         }
 
-        [Fact]
+        [SkipOnCI]
         public async Task ShouldIncludeSchemas()
         {
             _database.Execute("create schema a");
@@ -333,6 +327,25 @@ namespace Respawn.DatabaseTests
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM a.foo").ShouldBe(100);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM b.bar").ShouldBe(0);
+        }
+
+        [SkipOnCI]
+        public async Task ShouldResetSequencesAndIdentities()
+        {
+            _database.Execute("CREATE TABLE a (id INT GENERATED ALWAYS AS IDENTITY, value SERIAL)");
+            _database.Execute("INSERT INTO a DEFAULT VALUES");
+            _database.Execute("INSERT INTO a DEFAULT VALUES");
+            _database.Execute("INSERT INTO a DEFAULT VALUES");
+
+            var checkpoint = new Checkpoint
+            {
+                DbAdapter = DbAdapter.Postgres,
+                WithReseed = true
+            };
+
+            await checkpoint.Reset(_connection);
+            _database.ExecuteScalar<int>("SELECT nextval('a_id_seq')").ShouldBe(1);
+            _database.ExecuteScalar<int>("SELECT nextval('a_value_seq')").ShouldBe(1);
         }
     }
 }
