@@ -1,5 +1,6 @@
 ﻿using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
+using Respawn.Graph;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -55,12 +56,12 @@ namespace Respawn.DatabaseTests
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Foo").ShouldBe(100);
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
                 SchemasToInclude = new[] { "MySqlTests" }
-            };
-            await checkpoint.Reset(_connection);
+            });
+            await checkpoint.ResetAsync(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Foo").ShouldBe(0);
         }
@@ -113,12 +114,12 @@ CREATE TABLE `Bar` (
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Bar").ShouldBe(100);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Bob").ShouldBe(100);
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
                 SchemasToInclude = new[] { "MySqlTests" }
-            };
-            await checkpoint.Reset(_connection);
+            });
+            await checkpoint.ResetAsync(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Foo").ShouldBe(0);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Bar").ShouldBe(0);
@@ -139,14 +140,14 @@ CREATE TABLE `Bar` (
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM foo").ShouldBe(100);
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
                 SchemasToInclude = new[] { "MySqlTests" }
-            };
+            });
             try
             {
-                await checkpoint.Reset(_connection);
+                await checkpoint.ResetAsync(_connection);
             }
             catch
             {
@@ -178,12 +179,12 @@ CREATE TABLE `Bar` (
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM parent").ShouldBe(100);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM child").ShouldBe(100);
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
                 SchemasToInclude = new[] { "MySqlTests" }
-            };
-            await checkpoint.Reset(_connection);
+            });
+            await checkpoint.ResetAsync(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM parent").ShouldBe(0);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM child").ShouldBe(0);
@@ -223,14 +224,14 @@ CREATE TABLE `Bar` (
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM e").ShouldBe(1);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM f").ShouldBe(1);
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
                 SchemasToInclude = new[] { "MySqlTests" }
-            };
+            });
             try
             {
-                await checkpoint.Reset(_connection);
+                await checkpoint.ResetAsync(_connection);
             }
             catch
             {
@@ -257,13 +258,13 @@ CREATE TABLE `Bar` (
             _database.InsertBulk(Enumerable.Range(0, 100).Select(i => new Foo { Value = i }));
             _database.InsertBulk(Enumerable.Range(0, 100).Select(i => new Bar { Value = i }));
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
-                TablesToIgnore = new[] { "Foo" },
+                TablesToIgnore = new Table[] { "Foo" },
                 SchemasToInclude = new[] { "MySqlTests" }
-            };
-            await checkpoint.Reset(_connection);
+            });
+            await checkpoint.ResetAsync(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Foo").ShouldBe(100);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Bar").ShouldBe(0);
@@ -280,13 +281,13 @@ CREATE TABLE `Bar` (
             _database.InsertBulk(Enumerable.Range(0, 100).Select(i => new Foo { Value = i }));
             _database.InsertBulk(Enumerable.Range(0, 100).Select(i => new Bar { Value = i }));
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
-                TablesToInclude = new[] { "Foo" },
+                TablesToInclude = new Table[] { "Foo" },
                 SchemasToInclude = new[] { "MySqlTests" }
-            };
-            await checkpoint.Reset(_connection);
+            });
+            await checkpoint.ResetAsync(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Foo").ShouldBe(0);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM Bar").ShouldBe(100);
@@ -310,12 +311,12 @@ CREATE TABLE `Bar` (
                 _database.Execute("INSERT `B`.`Bar` VALUES (" + i + ")");
             }
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
                 SchemasToExclude = new[] { "A", "MySqlTests" }
-            };
-            await checkpoint.Reset(_connection);
+            });
+            await checkpoint.ResetAsync(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM A.Foo").ShouldBe(100);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM B.Bar").ShouldBe(0);
@@ -339,22 +340,39 @@ CREATE TABLE `Bar` (
                 _database.Execute("INSERT B.Bar VALUES (" + i + ")");
             }
 
-            var checkpoint = new Checkpoint
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
             {
                 DbAdapter = DbAdapter.MySql,
                 SchemasToInclude = new[] { "B" }
-            };
-            await checkpoint.Reset(_connection);
+            });
+            await checkpoint.ResetAsync(_connection);
 
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM A.Foo").ShouldBe(100);
             _database.ExecuteScalar<int>("SELECT COUNT(1) FROM B.Bar").ShouldBe(0);
+        }
+
+        [SkipOnCI]
+        public async Task ShouldResetSequencesAndIdentities()
+        {
+            _database.Execute("CREATE TABLE a (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY)");
+            _database.Execute("INSERT INTO a(id) VALUES (0)");
+            _database.Execute("INSERT INTO a(id) VALUES (0)");
+            _database.Execute("INSERT INTO a(id) VALUES (0)");
+
+            var checkpoint = await Respawner.CreateAsync(_connection, new RespawnerOptions
+            {
+                DbAdapter = DbAdapter.MySql,
+                WithReseed = true
+            });
+
+            await checkpoint.ResetAsync(_connection);
+            _database.ExecuteScalar<int>("SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MySqlTests' AND TABLE_NAME = 'a';").ShouldBe(1);
         }
 
         public void Dispose()
         {
             _connection.Close();
             _connection.Dispose();
-            _connection = null;
         }
     }
 }

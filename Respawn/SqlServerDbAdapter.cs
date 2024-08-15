@@ -1,6 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Respawn.Graph;
 
 namespace Respawn
@@ -9,7 +12,10 @@ namespace Respawn
     {
         private const char QuoteCharacter = '"';
 
-        public string BuildTableCommandText(Checkpoint checkpoint)
+        private byte? _compatibilityLevel;
+        private int? _engineEdition;
+
+        public string BuildTableCommandText(RespawnerOptions options)
         {
             string commandText = @"
 select s.name, t.name
@@ -17,27 +23,70 @@ from sys.tables t
 INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
 WHERE 1=1";
 
-            if (checkpoint.TablesToIgnore.Any())
+            if (options.TablesToIgnore.Any())
             {
-                var args = string.Join(",", checkpoint.TablesToIgnore.Select(t => $"N'{t}'"));
+                var tablesToIgnoreGroups = options.TablesToIgnore
+                    .GroupBy(
+                        t => t.Schema != null,
+                        t => t,
+                        (hasSchema, tables) => new
+                        {
+                            HasSchema = hasSchema, Tables = tables
+                        })
+                    .ToList();
+                foreach (var tableGroup in tablesToIgnoreGroups)
+                {
+                    if (tableGroup.HasSchema)
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Schema}.{table.Name}'"));
 
-                commandText += " AND t.name NOT IN (" + args + ")";
-            }
-            if (checkpoint.TablesToInclude.Any())
-            {
-                var args = string.Join(",", checkpoint.TablesToInclude.Select(t => $"N'{t}'"));
+                        commandText += " AND s.name + '.' + t.name NOT IN (" + args + ")";
+                    }
+                    else
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Name}'"));
 
-                commandText += " AND t.name IN (" + args + ")";
+                        commandText += " AND t.name NOT IN (" + args + ")";
+                    }
+                }
             }
-            if (checkpoint.SchemasToExclude.Any())
+            if (options.TablesToInclude.Any())
             {
-                var args = string.Join(",", checkpoint.SchemasToExclude.Select(t => $"N'{t}'"));
+                var tablesToIncludeGroups = options.TablesToInclude
+                    .GroupBy(
+                        t => t.Schema != null,
+                        t => t,
+                        (hasSchema, tables) => new
+                        {
+                            HasSchema = hasSchema,
+                            Tables = tables
+                        })
+                    .ToList();
+                foreach (var tableGroup in tablesToIncludeGroups)
+                {
+                    if (tableGroup.HasSchema)
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Schema}.{table.Name}'"));
+
+                        commandText += " AND s.name + '.' + t.name IN (" + args + ")";
+                    }
+                    else
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Name}'"));
+
+                        commandText += " AND t.name IN (" + args + ")";
+                    }
+                }
+            }
+            if (options.SchemasToExclude.Any())
+            {
+                var args = string.Join(",", options.SchemasToExclude.Select(schema => $"N'{schema}'"));
 
                 commandText += " AND s.name NOT IN (" + args + ")";
             }
-            else if (checkpoint.SchemasToInclude.Any())
+            else if (options.SchemasToInclude.Any())
             {
-                var args = string.Join(",", checkpoint.SchemasToInclude.Select(t => $"N'{t}'"));
+                var args = string.Join(",", options.SchemasToInclude.Select(schema => $"N'{schema}'"));
 
                 commandText += " AND s.name IN (" + args + ")";
             }
@@ -45,7 +94,7 @@ WHERE 1=1";
             return commandText;
         }
 
-        public string BuildRelationshipCommandText(Checkpoint checkpoint)
+        public string BuildRelationshipCommandText(RespawnerOptions options)
         {
             string commandText = @"
 select
@@ -60,27 +109,71 @@ sys.foreign_keys sfk
 	inner join sys.schemas fk_schema on so_fk.schema_id = fk_schema.schema_id
 where 1=1";
 
-            if (checkpoint.TablesToIgnore != null && checkpoint.TablesToIgnore.Any())
+            if (options.TablesToIgnore.Any())
             {
-                var args = string.Join(",", checkpoint.TablesToIgnore.Select(t => $"N'{t}'"));
+                var tablesToIgnoreGroups = options.TablesToIgnore
+                    .GroupBy(
+                        t => t.Schema != null,
+                        t => t,
+                        (hasSchema, tables) => new
+                        {
+                            HasSchema = hasSchema,
+                            Tables = tables
+                        })
+                    .ToList();
+                foreach (var tableGroup in tablesToIgnoreGroups)
+                {
+                    if (tableGroup.HasSchema)
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Schema}.{table.Name}'"));
 
-                commandText += " AND so_pk.name NOT IN (" + args + ")";
-            }
-            if (checkpoint.TablesToInclude != null && checkpoint.TablesToInclude.Any())
-            {
-                var args = string.Join(",", checkpoint.TablesToInclude.Select(t => $"N'{t}'"));
+                        commandText += " AND pk_schema.name + '.' + so_pk.name NOT IN (" + args + ")";
+                    }
+                    else
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Name}'"));
 
-                commandText += " AND so_pk.name IN (" + args + ")";
+                        commandText += " AND so_pk.name NOT IN (" + args + ")";
+                    }
+                }
             }
-            if (checkpoint.SchemasToExclude != null && checkpoint.SchemasToExclude.Any())
+            if (options.TablesToInclude.Any())
             {
-                var args = string.Join(",", checkpoint.SchemasToExclude.Select(t => $"N'{t}'"));
+                var tablesToIncludeGroups = options.TablesToInclude
+                    .GroupBy(
+                        t => t.Schema != null,
+                        t => t,
+                        (hasSchema, tables) => new
+                        {
+                            HasSchema = hasSchema,
+                            Tables = tables
+                        })
+                    .ToList();
+                foreach (var tableGroup in tablesToIncludeGroups)
+                {
+                    if (tableGroup.HasSchema)
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Schema}.{table.Name}'"));
+
+                        commandText += " AND pk_schema.name + '.' + so_pk.name IN (" + args + ")";
+                    }
+                    else
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Name}'"));
+
+                        commandText += " AND so_pk.name IN (" + args + ")";
+                    }
+                }
+            }
+            if (options.SchemasToExclude.Any())
+            {
+                var args = string.Join(",", options.SchemasToExclude.Select(schema => $"N'{schema}'"));
 
                 commandText += " AND pk_schema.name NOT IN (" + args + ")";
             }
-            else if (checkpoint.SchemasToInclude != null && checkpoint.SchemasToInclude.Any())
+            else if (options.SchemasToInclude.Any())
             {
-                var args = string.Join(",", checkpoint.SchemasToInclude.Select(t => $"N'{t}'"));
+                var args = string.Join(",", options.SchemasToInclude.Select(schema => $"N'{schema}'"));
 
                 commandText += " AND pk_schema.name IN (" + args + ")";
             }
@@ -151,7 +244,7 @@ where 1=1";
             return sql;
         }
 
-        public string BuildTemporalTableCommandText(Checkpoint checkpoint)
+        public string BuildTemporalTableCommandText(RespawnerOptions options)
         {
             string commandText = @"
 select s.name, t.name, temp_s.name, temp_t.name
@@ -161,11 +254,34 @@ INNER JOIN sys.tables temp_t on t.history_table_id = temp_t.object_id
 INNER JOIN sys.schemas temp_s on temp_t.schema_id = temp_s.schema_id
 WHERE t.temporal_type = 2";
 
-            if (checkpoint.TablesToIgnore.Any())
+            if (options.TablesToIgnore.Any())
             {
-                var args = string.Join(",", checkpoint.TablesToIgnore.Select(t => $"N'{t}'"));
+                var tablesToIgnoreGroups = options.TablesToIgnore
+                    .GroupBy(
+                        t => t.Schema != null,
+                        t => t,
+                        (hasSchema, tables) => new
+                        {
+                            HasSchema = hasSchema,
+                            Tables = tables
+                        })
+                    .ToList();
 
-                commandText += " AND t.name NOT IN (" + args + ")";
+                foreach (var tableGroup in tablesToIgnoreGroups)
+                {
+                    if (tableGroup.HasSchema)
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Schema}.{table.Name}'"));
+
+                        commandText += " AND s.name + '.' + t.name NOT IN (" + args + ")";
+                    }
+                    else
+                    {
+                        var args = string.Join(",", tableGroup.Tables.Select(table => $"N'{table.Name}'"));
+
+                        commandText += " AND t.name NOT IN (" + args + ")";
+                    }
+                }
             }
             return commandText;
         }
@@ -175,7 +291,7 @@ WHERE t.temporal_type = 2";
             var builder = new StringBuilder();
             foreach (var table in tablesToTurnOffSystemVersioning)
             {
-                builder.Append($"alter table {table.Schema}.{table.Name} set (SYSTEM_VERSIONING = OFF);\r\n");
+                builder.Append($"alter table {QuoteCharacter}{table.Schema}{QuoteCharacter}.{QuoteCharacter}{table.Name}{QuoteCharacter} set (SYSTEM_VERSIONING = OFF);\r\n");
             }
             return builder.ToString();
         }
@@ -185,11 +301,39 @@ WHERE t.temporal_type = 2";
             var builder = new StringBuilder();
             foreach (var table in tablesToTurnOnSystemVersioning)
             {
-                builder.Append($"alter table {table.Schema}.{table.Name} set (SYSTEM_VERSIONING = ON (HISTORY_TABLE = {table.HistoryTableSchema}.{table.HistoryTableName}));\r\n");
+                builder.Append($"alter table {QuoteCharacter}{table.Schema}{QuoteCharacter}.{QuoteCharacter}{table.Name}{QuoteCharacter} set (SYSTEM_VERSIONING = ON (HISTORY_TABLE = {QuoteCharacter}{table.HistoryTableSchema}{QuoteCharacter}.{QuoteCharacter}{table.HistoryTableName}{QuoteCharacter}));\r\n");
             }
             return builder.ToString();
         }
 
-        public bool SupportsTemporalTables => true;
+        public async Task<bool> CheckSupportsTemporalTables(DbConnection connection)
+        {
+            _compatibilityLevel ??= await GetCompatibilityLevel(connection);
+            _engineEdition ??= await GetEngineEdition(connection);
+
+            //Code taken from https://github.com/dotnet/efcore/blob/main/src/EFCore.SqlServer/Scaffolding/Internal/SqlServerDatabaseModelFactory.cs
+            return _compatibilityLevel >= 130 && _engineEdition != 6;
+        }
+
+        private static async Task<int> GetEngineEdition(DbConnection connection)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT SERVERPROPERTY('EngineEdition');";
+            var engineEdition = await command.ExecuteScalarAsync();
+            return (int)engineEdition!;
+        }
+
+        private static async Task<byte> GetCompatibilityLevel(DbConnection connection)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $@"
+SELECT compatibility_level
+FROM sys.databases
+WHERE name = '{connection.Database}';";
+
+            var result = await command.ExecuteScalarAsync();
+            return result != null ? Convert.ToByte(result) : (byte)0;
+        }
     }
 }

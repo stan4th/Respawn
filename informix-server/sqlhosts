@@ -1,0 +1,6 @@
+############################################################
+### DO NOT MODIFY THIS COMMENT SECTION 
+### HOST NAME = 81aaa9bdd809 
+############################################################
+informix        onsoctcp        *81aaa9bdd809         9088
+informix_dr     drsoctcp        *81aaa9bdd809         9089
